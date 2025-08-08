@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: mini_guru_postgres
+    environment:
+      POSTGRES_DB: mini_guru
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - mini_guru_network
+
+  vector:
+    image: qdrant/qdrant:v1.7.4
+    container_name: mini_guru_qdrant
+    ports:
+      - "6335:6333"
+      - "6336:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - mini_guru_network
+
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mini_guru_backend
+    command: gunicorn miniguru.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    volumes:
+      - ./backend:/app
+      - media_files:/app/media
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/mini_guru
+      - QDRANT_URL=http://vector:6333
+      - OPENAI_API_KEY=sk-test-key-for-development-only
+      - MOCK_MODE=true
+      - CHUNK_SIZE=${CHUNK_SIZE:-400}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-50}
+    depends_on:
+      - postgres
+      - vector
+    networks:
+      - mini_guru_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mini_guru_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    depends_on:
+      - web
+    networks:
+      - mini_guru_network
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  media_files:
+
+networks:
+  mini_guru_network:
+    driver: bridge
